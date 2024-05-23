@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-contract StakingPHGX is ERC20 {
+contract StakingPHGX {
     address public token;
     address public owner;
 
@@ -29,7 +29,12 @@ contract StakingPHGX is ERC20 {
     // Events
     event Staked(address indexed staker, uint256 amount, uint256 planId);
     event Unstaked(address indexed staker, uint256 amount);
-    event PlanAdded(uint256 indexed planId, uint256 rewardRate, uint256 unlockPeriod, uint256 minimalAmount);
+    event PlanAdded(
+        uint256 indexed planId,
+        uint256 rewardRate,
+        uint256 unlockPeriod,
+        uint256 minimalAmount
+    );
     event PlanRemoved(uint256 indexed planId);
 
     modifier onlyOwner() {
@@ -37,15 +42,35 @@ contract StakingPHGX is ERC20 {
         _;
     }
 
-    constructor(address stakableToken) ERC20("StakingPHGX", "PHGX") {
+    constructor(address stakableToken) {
         token = stakableToken;
         owner = msg.sender;
     }
 
-    function addPlan(uint256 rewardRate, uint256 unlockPeriod, uint256 minimalAmount) external onlyOwner {
+    function addPlan(
+        uint256 rewardRate,
+        uint256 unlockPeriod,
+        uint256 minimalAmount
+    ) external onlyOwner {
         plans[planCount] = Plan(rewardRate, unlockPeriod, minimalAmount);
         emit PlanAdded(planCount, rewardRate, unlockPeriod, minimalAmount);
         planCount++;
+    }
+
+    function getPlans() external view returns (Plan[] memory) {
+        Plan[] memory array = new Plan[](planCount);
+        uint256 idx;
+        uint256 count = 0;
+
+        for (idx = 0; idx < planCount; idx++) {
+            if (plans[idx].rewardRate == 0) continue;
+
+            array[count].rewardRate = plans[idx].rewardRate;
+            array[count].unlockPeriod = plans[idx].unlockPeriod;
+            array[count].minimalAmount = plans[idx].minimalAmount;
+            count++;
+        }
+        return array;
     }
 
     function removePlan(uint256 planId) external onlyOwner {
@@ -54,12 +79,18 @@ contract StakingPHGX is ERC20 {
         delete plans[planId];
         emit PlanRemoved(planId);
     }
-    
-    function stake(uint256 amount, uint256 planId) external payable{
+
+    function stake(uint256 amount, uint256 planId) external  {
         require(planId < planCount, "Invalid plan ID");
-        require(amount >= plans[planId].minimalAmount, "Amount must be greater than mininal amount of stake of the plan");
-        require(stakers[msg.sender].amount == 0, "User already has an existing stake");
-        
+        require(
+            amount >= plans[planId].minimalAmount,
+            "Amount must be greater than mininal amount of stake of the plan"
+        );
+        require(
+            stakers[msg.sender].amount == 0,
+            "User already has an existing stake"
+        );
+
         IERC20(token).transferFrom(msg.sender, address(this), amount);
 
         stakers[msg.sender] = Staker(amount, planId, block.timestamp);
@@ -67,19 +98,32 @@ contract StakingPHGX is ERC20 {
         emit Staked(msg.sender, amount, planId);
     }
 
-    function unstake() external payable {
+    function unstake() external {
         require(stakers[msg.sender].amount > 0, "No stake to withdraw");
 
         uint256 stakedAmount = stakers[msg.sender].amount;
         uint256 planId = stakers[msg.sender].planId;
 
-        require(block.timestamp >= stakers[msg.sender].stakingTimestamp + plans[planId].unlockPeriod, "Stake is still locked");
+        require(
+            block.timestamp >=
+                stakers[msg.sender].stakingTimestamp +
+                    plans[planId].unlockPeriod,
+            "Stake is still locked"
+        );
 
         uint256 reward = 0;
         if (plans[planId].unlockPeriod > 0) {
-            reward = ( stakedAmount * plans[planId].rewardRate ) / 100 + stakedAmount;
+            reward =
+                (stakedAmount * plans[planId].rewardRate) /
+                100 +
+                stakedAmount;
         } else {
-            reward = ( block.timestamp - stakers[msg.sender].stakingTimestamp ) * stakedAmount * plans[planId].rewardRate / 315360 + stakedAmount;
+            reward =
+                ((block.timestamp - stakers[msg.sender].stakingTimestamp) *
+                    stakedAmount *
+                    plans[planId].rewardRate) /
+                315360 +
+                stakedAmount;
         }
 
         IERC20(token).transfer(msg.sender, reward);
@@ -92,8 +136,9 @@ contract StakingPHGX is ERC20 {
     function unlockingTime() external view returns (uint256) {
         require(stakers[msg.sender].amount > 0, "No stake to withdraw");
         uint256 planId = stakers[msg.sender].planId;
-        uint256 timeRemaining = block.timestamp - stakers[msg.sender].stakingTimestamp;
-        if(timeRemaining >= plans[planId].unlockPeriod) {
+        uint256 timeRemaining = block.timestamp -
+            stakers[msg.sender].stakingTimestamp;
+        if (timeRemaining >= plans[planId].unlockPeriod) {
             return 0;
         } else {
             return timeRemaining;
